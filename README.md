@@ -1,4 +1,4 @@
-# Genetics AI Paper Digest
+# Daily Genetics/genomics + ML Paper Deliver
 
 This repository contains Python scripts for automatically collecting recent papers related to AI, machine learning, genetics, genomics, and computational biology, then sending organized email digests.
 
