@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
-
+import xml.etree.ElementTree as ET
 
 # =========================
 # User settings
@@ -22,6 +22,78 @@ MAX_PAPERS_PER_EMAIL = 20
 SUMMARY_SENTENCES = 2
 
 MIN_QUALITY_SCORE = 10
+
+MAX_PUBMED_RESULTS = 40
+
+TARGET_JOURNALS = [
+    "PLOS Computational Biology",
+    "Bioinformatics",
+    "Genome Biology",
+    "Genome Research",
+    "Nature Methods",
+    "Nature Biotechnology",
+    "Nature Genetics",
+    "Nucleic Acids Research",
+    "Cell Systems",
+    "PLOS Genetics",
+    "PLOS Biology",
+    "Briefings in Bioinformatics",
+    "BMC Bioinformatics",
+    "GigaScience",
+    "Patterns",
+    "Nature Communications",
+    "Communications Biology",
+    "Cell Genomics"
+]
+
+PUBMED_TOPIC_TERMS = [
+    # AI / ML
+    "machine learning",
+    "deep learning",
+    "artificial intelligence",
+    "foundation model",
+    "large language model",
+    "transformer",
+    "self-supervised learning",
+    "representation learning",
+    "generative model",
+    "diffusion model",
+    "variational autoencoder",
+    "autoencoder",
+    "graph neural network",
+    "graph transformer",
+    "graph representation learning",
+
+    # genetics / genomics
+    "genomics",
+    "genetics",
+    "single-cell",
+    "single cell",
+    "scRNA-seq",
+    "scATAC-seq",
+    "methylation",
+    "epigenomics",
+    "chromatin",
+    "variant effect",
+    "regulatory variant",
+    "GWAS",
+    "eQTL",
+    "multi-omics",
+    "spatial transcriptomics",
+
+    # your added interests
+    "Hi-C",
+    "single-cell Hi-C",
+    "scHi-C",
+    "3D genome",
+    "3D chromatin",
+    "chromatin conformation",
+    "chromatin architecture",
+    "genome folding",
+    "TAD",
+    "contact map",
+    "gene regulatory network"
+]
 
 TOPICS = {
     "Single-cell AI / Foundation Models": [
@@ -235,12 +307,12 @@ def score_paper(title: str, abstract: str) -> int:
     return score
 
 
-def quality_score_paper(title: str, abstract: str, source: str = "", category: str = "") -> int:
+def quality_score_paper(title: str, abstract: str, source: str = "", category: str = "", journal: str = "") -> int:
     """
     Estimate whether a paper is likely useful/high quality for genetics/genomics ML.
     This is not perfect, but much better than keyword filtering alone.
     """
-    combined = f"{title} {abstract} {source} {category}".lower()
+    combined = f"{title} {abstract} {source} {category} {journal}".lower()
     score = 0
 
     # Strong positive signals: likely useful methods
@@ -404,6 +476,7 @@ def fetch_biorxiv_like(server: str, days_back: int = 2) -> list[dict]:
                     "date": date_posted,
                     "category": category,
                     "url": f"https://doi.org/{doi}" if doi else "",
+                    "doi": doi,
                     "score": score_paper(title, abstract),
                     "topics": assign_topics(title, abstract)
                 })
@@ -482,7 +555,140 @@ def fetch_arxiv(days_back: int = 2, max_results: int = 30) -> list[dict]:
 
     return papers
 
+def fetch_pubmed_journal_articles(days_back: int = 7, max_results: int = 40) -> list[dict]:
+    """
+    Fetch recent journal-published papers from PubMed using:
+    target journals + topic terms + publication date window.
 
+    This catches papers from journals such as PLOS Computational Biology,
+    Bioinformatics, Genome Biology, Nature Methods, etc.
+    """
+    end = date.today()
+    start = end - timedelta(days=days_back)
+
+    journal_query = " OR ".join([f'"{journal}"[Journal]' for journal in TARGET_JOURNALS])
+    topic_query = " OR ".join([f'"{term}"[Title/Abstract]' for term in PUBMED_TOPIC_TERMS])
+
+    query = (
+        f"({journal_query}) AND "
+        f"({topic_query}) AND "
+        f'("{start.isoformat()}"[Date - Publication] : "{end.isoformat()}"[Date - Publication])'
+    )
+
+    search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    search_params = {
+        "db": "pubmed",
+        "term": query,
+        "retmode": "json",
+        "retmax": max_results,
+        "sort": "pub date"
+    }
+
+    try:
+        search_resp = requests.get(search_url, params=search_params, timeout=20)
+        search_resp.raise_for_status()
+        pmids = search_resp.json().get("esearchresult", {}).get("idlist", [])
+    except Exception as e:
+        print(f"Error searching PubMed: {e}")
+        return []
+
+    if not pmids:
+        return []
+
+    fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    fetch_params = {
+        "db": "pubmed",
+        "id": ",".join(pmids),
+        "retmode": "xml"
+    }
+
+    try:
+        fetch_resp = requests.get(fetch_url, params=fetch_params, timeout=30)
+        fetch_resp.raise_for_status()
+        root = ET.fromstring(fetch_resp.text)
+    except Exception as e:
+        print(f"Error fetching PubMed records: {e}")
+        return []
+
+    papers = []
+
+    for article in root.findall(".//PubmedArticle"):
+        medline = article.find(".//MedlineCitation")
+        article_info = article.find(".//Article")
+
+        if article_info is None:
+            continue
+
+        title = normalize_text("".join(article_info.findtext("ArticleTitle", default="")))
+
+        abstract_parts = []
+        for abstract_text in article_info.findall(".//AbstractText"):
+            label = abstract_text.attrib.get("Label")
+            text = "".join(abstract_text.itertext())
+            if label:
+                abstract_parts.append(f"{label}: {text}")
+            else:
+                abstract_parts.append(text)
+
+        abstract = normalize_text(" ".join(abstract_parts))
+
+        journal = article_info.findtext(".//Journal/Title", default="")
+        journal = normalize_text(journal)
+
+        pub_date_node = article_info.find(".//JournalIssue/PubDate")
+        pub_year = pub_date_node.findtext("Year", default="") if pub_date_node is not None else ""
+        pub_month = pub_date_node.findtext("Month", default="") if pub_date_node is not None else ""
+        pub_day = pub_date_node.findtext("Day", default="") if pub_date_node is not None else ""
+        pub_date = " ".join([x for x in [pub_year, pub_month, pub_day] if x])
+
+        authors_list = []
+        for author in article_info.findall(".//Author"):
+            last = author.findtext("LastName", default="")
+            initials = author.findtext("Initials", default="")
+            if last:
+                authors_list.append(f"{last} {initials}".strip())
+
+        authors = ", ".join(authors_list[:12])
+        if len(authors_list) > 12:
+            authors += ", et al."
+
+        pmid = medline.findtext("PMID", default="") if medline is not None else ""
+
+        doi = ""
+        for article_id in article.findall(".//ArticleId"):
+            if article_id.attrib.get("IdType") == "doi":
+                doi = article_id.text or ""
+                break
+
+        if doi:
+            url = f"https://doi.org/{doi}"
+        elif pmid:
+            url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        else:
+            url = ""
+
+        if not title:
+            continue
+
+        if is_relevant(title, abstract):
+            paper = {
+                "source": "PubMed",
+                "title": title,
+                "abstract": abstract,
+                "authors": authors,
+                "date": pub_date,
+                "category": journal,
+                "url": url,
+                "score": score_paper(title, abstract),
+                "topics": assign_topics(title, abstract),
+                "journal": journal,
+                "pmid": pmid,
+                "doi": doi
+            }
+
+            papers.append(paper)
+
+    return papers
 # =========================
 # Email formatting
 # =========================
@@ -517,7 +723,7 @@ def build_email_html(papers: list[dict]) -> str:
     html_parts = [
         "<html><body>",
         f"<h2>Daily AI + Genomics Paper Digest — {today}</h2>",
-        f"<p>Showing the top <b>{len(papers)}</b> most relevant papers from bioRxiv, medRxiv, and arXiv.</p>",
+        f"<p>Showing the top <b>{len(papers)}</b> most relevant papers from bioRxiv, medRxiv, arXiv, and PubMed journal searches.</p>",
         "<p><b>Priority topics:</b> single-cell AI, scHi-C/3D genome structure, genomic foundation models, methylation/epigenomics, variant effect prediction, multimodal omics, VAE, and graph neural networks.</p>",
         "<hr>"
     ]
@@ -528,6 +734,7 @@ def build_email_html(papers: list[dict]) -> str:
         summary = html.escape(make_two_sentence_summary(paper["title"], paper["abstract"]))
         source = html.escape(paper["source"])
         category = html.escape(paper.get("category", ""))
+        journal = html.escape(paper.get("journal", ""))
         paper_date = html.escape(paper["date"])
         url = paper["url"]
         topics = html.escape(", ".join(paper["topics"]))
@@ -536,7 +743,7 @@ def build_email_html(papers: list[dict]) -> str:
         html_parts.append(f"""
         <div style="margin-bottom: 22px; padding-bottom: 16px; border-bottom: 1px solid #ddd;">
             <p><b>{i}. <a href="{url}">{title}</a></b></p>
-            <p><b>Source:</b> {source} | <b>Date:</b> {paper_date}</p>
+            <p><b>Source:</b> {source} | <b>Journal/Category:</b> {journal or category} | <b>Date:</b> {paper_date}</p>
             <p><b>Category:</b> {category}</p>
             <p><b>Authors:</b> {authors}</p>
             <p><b>Matched topics:</b> {topics}</p>
@@ -547,7 +754,7 @@ def build_email_html(papers: list[dict]) -> str:
 
     html_parts.append("""
         <p style="font-size: 12px; color: #666;">
-        This digest is automatically generated from recent bioRxiv, medRxiv, and arXiv papers using keyword filtering and relevance scoring.
+        This digest is automatically generated from recent bioRxiv, medRxiv, arXiv, and PubMed journal searches using keyword filtering and relevance scoring.
         </p>
         </body></html>
     """)
@@ -585,13 +792,20 @@ def main():
     all_papers.extend(fetch_biorxiv_like("biorxiv", DAYS_BACK))
     all_papers.extend(fetch_biorxiv_like("medrxiv", DAYS_BACK))
     all_papers.extend(fetch_arxiv(DAYS_BACK, MAX_ARXIV_RESULTS))
+    all_papers.extend(fetch_pubmed_journal_articles(days_back=7, max_results=MAX_PUBMED_RESULTS))
 
     # Deduplicate by title and add quality score
     seen = set()
     deduped = []
 
     for paper in all_papers:
-        key = paper["title"].lower().strip()
+        doi = paper.get("doi", "").lower().strip()
+        title_key = paper.get("title", "").lower().strip()
+
+        if doi:
+            key = f"doi:{doi}"
+        else:
+            key = f"title:{title_key}"
 
         if key in seen:
             continue
@@ -602,7 +816,8 @@ def main():
             title=paper.get("title", ""),
             abstract=paper.get("abstract", ""),
             source=paper.get("source", ""),
-            category=paper.get("category", "")
+            category=paper.get("category", ""),
+            journal=paper.get("journal", "")
         )
 
         # Keep only papers above quality threshold
@@ -614,9 +829,10 @@ def main():
 
     send_email(subject, html_body)
     print(
-    f"Found {len(all_papers)} initially relevant papers. "
-    f"Kept and sent top {len(deduped)} papers after quality filtering. "
-)
+        f"Found {len(all_papers)} initially relevant papers. "
+        f"Kept {len(deduped)} after quality filtering. "
+        f"Sent top {min(len(deduped), MAX_PAPERS_PER_EMAIL)} papers."
+    )
 
 
 if __name__ == "__main__":
