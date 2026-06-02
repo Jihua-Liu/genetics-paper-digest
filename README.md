@@ -95,12 +95,6 @@ genetics_paper_digest.py
 
 ### 1. Clone the repository
 
-```bash
-git clone https://github.com/Jihua-Liu/ai-genomics-paper-digest.git
-cd ai-genomics-paper-digest
-```
-
-If your repository still uses the old name, use:
 
 ```bash
 git clone https://github.com/Jihua-Liu/genetics-paper-digest.git
@@ -158,13 +152,13 @@ This is the recommended option if you have access to a lab server that stays on.
 Example project path:
 
 ```bash
-/PATHTOTHEPROJECT/genetics-paper-digest
+/PATHTOPROJECT/genetics-paper-digest
 ```
 
 Example conda Python path:
 
 ```bash
-/PATHTOTHECONDAENV/anaconda3/envs/paper_digest/bin/python
+/PATHTOCONDA/anaconda3/envs/paper_digest/bin/python
 ```
 
 Edit crontab:
@@ -173,10 +167,10 @@ Edit crontab:
 crontab -e
 ```
 
-Add this line to run the combined digest every day at 2:00 PM server time:
+Add this line to run the combined digest every day at 8:00 AM server time:
 
 ```bash
-0 14 * * * cd /PATHTOTHEPROJECT/genetics-paper-digest && /PATHTOTHECONDAENV/anaconda3/envs/paper_digest/bin/python genetics_paper_digest.py >> genetics_paper_digest.log 2>&1
+0 8 * * * cd /PATHTOTHEPROJECT/genetics-paper-digest && /PATHTOTHECONDAENV/anaconda3/envs/paper_digest/bin/python genetics_paper_digest.py >> genetics_paper_digest.log 2>&1
 ```
 
 Check your cron jobs:

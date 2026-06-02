@@ -14,16 +14,16 @@ import xml.etree.ElementTree as ET
 # User settings
 # =========================
 
-DAYS_BACK = 15
+DAYS_BACK = 30
 MAX_ARXIV_RESULTS = 100
 MAX_BIORXIV_RESULTS_PER_SERVER = 100
 
-MAX_PAPERS_PER_EMAIL = 20
+MAX_PAPERS_PER_EMAIL = 25
 SUMMARY_SENTENCES = 2
 
 MIN_QUALITY_SCORE = 10
 
-MAX_PUBMED_RESULTS = 40
+MAX_PUBMED_RESULTS = 100
 
 TARGET_JOURNALS = [
     "PLOS Computational Biology",
@@ -795,7 +795,7 @@ def main():
     all_papers.extend(fetch_biorxiv_like("biorxiv", DAYS_BACK))
     all_papers.extend(fetch_biorxiv_like("medrxiv", DAYS_BACK))
     all_papers.extend(fetch_arxiv(DAYS_BACK, MAX_ARXIV_RESULTS))
-    all_papers.extend(fetch_pubmed_journal_articles(days_back=7, max_results=MAX_PUBMED_RESULTS))
+    all_papers.extend(fetch_pubmed_journal_articles(days_back=DAYS_BACK, max_results=MAX_PUBMED_RESULTS))
 
     # Deduplicate by title and add quality score
     seen = set()
