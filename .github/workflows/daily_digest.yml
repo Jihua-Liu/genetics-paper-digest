@@ -6,11 +6,8 @@ env:
 on:
   schedule:
     # GitHub Actions uses UTC.
-    # During daylight saving time in Madison/Chicago:
-    # 14:20 UTC = 9:20 AM Central Daylight Time
-    # 14:25 UTC = 9:25 AM Central Daylight Time
+    # 14:20 UTC = 9:20 AM Madison/Chicago during daylight saving time.
     - cron: "20 14 * * *"
-    - cron: "25 14 * * *"
 
   workflow_dispatch:
 
@@ -31,7 +28,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run broad AI/genomics digest
-        if: github.event.schedule == '20 14 * * *' || github.event_name == 'workflow_dispatch'
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
@@ -39,10 +35,8 @@ jobs:
         run: python genetics_ai_updates.py
 
       - name: Run useful ML methods digest
-        if: github.event.schedule == '25 14 * * *' || github.event_name == 'workflow_dispatch'
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
         run: python genetics_ml_methods_updates.py
-
