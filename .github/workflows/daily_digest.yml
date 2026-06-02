@@ -5,7 +5,7 @@ env:
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+      - cron: "38 18 * * *"   # <-- replace 15 and 18 with YOUR target UTC minute/hour
 
   workflow_dispatch:
 
