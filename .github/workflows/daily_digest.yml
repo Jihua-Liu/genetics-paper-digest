@@ -7,7 +7,7 @@ on:
   schedule:
     # GitHub Actions uses UTC.
     # 14:20 UTC = 9:20 AM Madison/Chicago during daylight saving time.
-    - cron: "20 14 * * *"
+    - cron: "*/5 * * * *"
 
   workflow_dispatch:
 
