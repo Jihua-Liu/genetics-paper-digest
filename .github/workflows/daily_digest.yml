@@ -5,8 +5,7 @@ env:
 
 on:
   schedule:
-    # GitHub Actions uses UTC.
-    # 14:20 UTC = 9:20 AM Madison/Chicago during daylight saving time.
+    # Test schedule: every 15 minutes
     - cron: "*/15 * * * *"
 
   workflow_dispatch:
